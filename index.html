@@ -1,562 +1,226 @@
-<!doctype html>
-<html lang="en">
+<!DOCTYPE html>
+<html>
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Israel Coffee — Boss Fight Bullet Hell</title>
+<meta charset="UTF-8" />
+<title>IS REAL COFFEE — Bullet Hell</title>
 <style>
-  :root{--bg:#0b1020;--fg:#e6eef8;--accent:#ff6b6b;}
-  html,body{height:100%;margin:0;background:linear-gradient(180deg,#071020,#0b1020);color:var(--fg);font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
-  #gameWrap{display:flex;flex-direction:column;align-items:center;gap:8px;padding:12px}
-  canvas{background:linear-gradient(180deg,#071020,#071930);border:6px solid rgba(255,255,255,0.03);box-shadow:0 8px 30px rgba(0,0,0,0.6);}
-  .ui{width:900px;max-width:calc(100vw - 24px);display:flex;justify-content:space-between;align-items:center}
-  .hud{display:flex;gap:12px;align-items:center}
-  .bar{height:18px;border-radius:8px;background:rgba(255,255,255,0.06);padding:2px;min-width:220px}
-  .bar > .fill{height:100%;border-radius:6px;background:linear-gradient(90deg,var(--accent),#ffb86b);width:100%}
-  .small{font-size:12px;color:#9fb0c9}
-  .center{display:flex;gap:12px;align-items:center}
-  button{background:#132235;color:var(--fg);border:1px solid rgba(255,255,255,0.03);padding:8px 10px;border-radius:8px}
-  @media (max-width:700px){.ui{flex-direction:column;align-items:flex-start}}
+  body { margin:0; overflow:hidden; background:black; }
+  #mainMenu {
+    position:absolute; inset:0;
+    display:flex; flex-direction:column;
+    justify-content:center; align-items:center;
+    background:black; color:white;
+    font-family:Arial; z-index:10;
+  }
+  button {
+    padding:15px 30px; font-size:20px;
+    cursor:pointer; border:none;
+    background:#444; color:white;
+  }
 </style>
 </head>
 <body>
-<div id="mainMenu" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(180deg,#071020cc,#071930cc);z-index:50;color:var(--fg);">
-  <div style="font-size:28px;text-align:center;padding:8px 16px;">I AM IS REAL COFFEE PT BOME GAH ZAH</div>
-  <button id="startBtn" style="margin-top:18px;padding:10px 20px;font-size:18px;border-radius:8px;">Start</button>
+<div id="mainMenu">
+  <h1>I AM IS REAL COFFEE PT BOME GAH ZAH</h1>
+  <button id="startBtn">START</button>
 </div>
-
-<div id="gameWrap">
-  <div class="ui">
-    <div class="hud">
-      <div>
-        <div class="small">Player</div>
-        <div class="bar" style="width:180px"><div id="playerHP" class="fill" style="width:100%"></div></div>
-      </div>
-      <div>
-        <div class="small">Boss: Israel Coffee</div>
-        <div class="bar"><div id="bossHP" class="fill" style="width:100%"></div></div>
-      </div>
-    </div>
-    <div class="center small">
-      <div>WASD: Move</div>
-      <div>Space: Jump</div>
-      <div>Hold LMB: Swing</div>
-      <div>Aim: Mouse</div>
-    </div>
-  </div>
-  <canvas id="c" width="900" height="600"></canvas>
-  <div style="width:900px;max-width:calc(100vw - 24px);display:flex;justify-content:space-between;align-items:center">
-    <div class="small">Tip: The sword hits in an arc around your aim. Timing matters!</div>
-    <div><button id="restart">Restart</button></div>
-  </div>
-</div>
-
+<canvas id="gameCanvas" width="900" height="600"></canvas>
 <script>
-(() => {
-  const canvas = document.getElementById('c');
-  // Sprites (place image files next to the HTML)
-  const bossImg = new Image(); bossImg.src = 'boss.png';
-  const playerImg = new Image(); playerImg.src = 'player.png';
-  // gubbyImg already defined below; ensure it's loaded earlier too
-  gubbyImg.src = gubbyImg.src || 'gubby.png';
-  const ctx = canvas.getContext('2d');
-  const W = canvas.width; const H = canvas.height;
+const canvas = document.getElementById("gameCanvas");
+const ctx = canvas.getContext("2d");
 
-  // Game state
-  let keys = {};
-  let mouse = {x: W/2, y: H/2, down:false};
+// --- Images ---
+const playerImg = new Image(); playerImg.src = "player.png";
+const bossImg   = new Image(); bossImg.src   = "boss.png";
+const gubbyImg  = new Image(); gubbyImg.src  = "gubby.png";
 
-  // Player
-  const player = {
-    x: W/2, y: H - 120, w:28, h:48,
-    vx:0, vy:0, speed:230, onGround:false,
-    hp:100, maxHp:100,
-    facing:1
-  };
+// --- Player ---
+const player = {
+  x:100, y:300, width:40, height:50,
+  vx:0, vy:0,
+  speed:4,
+  jumpPower:12,
+  onGround:false,
+  attacking:false
+};
 
-  // Boss: Israel Coffee
-  const boss = {
-    x: W/2, y:120, r:60,
-    vx:60, hp:500, maxHp:500,
-    phase:1, time:0, alive:true
-  };
+// --- Input ---
+const keys = {};
+document.addEventListener("keydown", e => keys[e.key]=true);
+document.addEventListener("keyup", e => keys[e.key]=false);
+canvas.addEventListener("mousedown", ()=> player.attacking=true);
+canvas.addEventListener("mouseup", ()=> player.attacking=false);
 
-  // Bullets
-  let bullets = [];
-  // Platforms for reaching the boss
-  const platforms = [
-    { x: 0, y: canvas.height - 40, width: canvas.width, height: 40 }, // ground
-    { x: 150, y: 350, width: 200, height: 20 },
-    { x: 450, y: 300, width: 220, height: 20 },
-    { x: 250, y: 220, width: 180, height: 20 },
-    { x: 500, y: 150, width: 200, height: 20 },
-    { x: 100, y: 150, width: 180, height: 20 },
-    { x: 350, y: 100, width: 240, height: 20 }
+// --- Platforms ---
+const platforms = [
+  {x:0, y:560, width:900, height:40},
+  {x:150, y:420, width:200, height:20},
+  {x:450, y:380, width:220, height:20},
+  {x:250, y:300, width:180, height:20},
+  {x:500, y:240, width:200, height:20},
+  {x:100, y:200, width:180, height:20},
+  {x:350, y:150, width:240, height:20}
 ];
 
-  // Minions array
-  let enemies = [];
-  const gubbyImg = new Image(); gubbyImg.src = 'gubby.png';
+// --- Boss ---
+let boss = {
+  x:600, y:200, width:120, height:120,
+  hp:300,
+  phase:1,
+  attackTimer:0,
+  laserTimer:0,
+  red:false
+};
 
-  // Boss laser state
-  boss.phase2 = boss.phase2 || false;
-  boss.summonCooldown = boss.summonCooldown || 2500;
-  boss.lastSummon = boss.lastSummon || 0;
-  boss.laserActive = boss.laserActive || false;
-  boss.laserTimer = boss.laserTimer || 0;
-  boss.laserDuration = boss.laserDuration || 1.2;
-  boss.laserWindup = boss.laserWindup || 0.5;
-  boss.laserCooldown = boss.laserCooldown || 4.0; // seconds between lasers
-  boss._sinceLastLaser = boss._sinceLastLaser || 0;
-  let laser = {ang:0,scale:1};
+// --- Bullets, Minions ---
+let bullets = [];
+let minions = [];
 
-  // Sword swing
-  const sword = {
-    sweeping:false, // whether currently attacking
-    timer:0, // how long into swing
-    swingTime:0.18, // seconds for one swing cycle
-    arc:Math.PI * 0.9, // arc size (radians)
-    range:90, // pixels
-    cooldown:0.06 // damage tick
-  };
-
-  let lastTime = performance.now();
-  let accum = 0;
-
-  // Helpers
-  function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
-  function lerp(a,b,t){return a + (b-a)*t}
-
-  // Input
-  window.addEventListener('keydown', e => {keys[e.key.toLowerCase()]=true; if(e.key===' '){e.preventDefault();}});
-  window.addEventListener('keyup', e => {keys[e.key.toLowerCase()]=false;});
-  canvas.addEventListener('mousemove', e => {
-    const rect = canvas.getBoundingClientRect();
-    mouse.x = (e.clientX - rect.left) * (canvas.width / rect.width);
-    mouse.y = (e.clientY - rect.top) * (canvas.height / rect.height);
+function shootAtPlayer(speed){
+  const angle = Math.atan2(player.y - boss.y, player.x - boss.x);
+  bullets.push({
+    x: boss.x, y: boss.y,
+    vx: Math.cos(angle)*speed,
+    vy: Math.sin(angle)*speed,
+    r:8
   });
-  canvas.addEventListener('mousedown', e => { if(e.button===0) mouse.down = true; });
-  canvas.addEventListener('mouseup', e => { if(e.button===0) mouse.down = false; });
-
-  document.getElementById('restart').addEventListener('click', resetGame);
-
-  function resetGame(){
-    player.x = W/2; player.y = H-120; player.vx = player.vy = 0; player.hp = player.maxHp; boss.hp = boss.maxHp; boss.x = W/2; boss.vx = 60; boss.phase = 1; boss.time=0; boss.alive=true; bullets=[]; sword.timer=0; sword.sweeping=false;
-  }
-
-  // Bullet creation
-  function spawnBullet(x,y,vx,vy,size=6,owner='boss',life=6){ bullets.push({x,y,vx,vy,size,owner,life}); }
-
-  // Boss patterns
-  function bossUpdate(dt){
-    boss.time += dt;
-    // simple horizontal movement
-    boss.x += boss.vx * dt;
-    if(boss.x < boss.r + 20){ boss.x = boss.r + 20; boss.vx *= -1; }
-    if(boss.x > W - boss.r - 20){ boss.x = W - boss.r - 20; boss.vx *= -1; }
-
-    // change phase by health
-    const hpPct = boss.hp / boss.maxHp;
-    boss.phase = hpPct > 0.6 ? 1 : hpPct > 0.33 ? 2 : 3;
-
-    // firing patterns depending on phase
-    if(boss.phase === 1){
-      // slow radial burst every 1.2s
-      if(Math.floor(boss.time * 10) % 12 === 0 && (boss.time - dt) * 10 % 12 > (boss.time * 10) % 12 - 1){
-        radial(boss.x, boss.y, 12, 120);
-      }
-    } else if(boss.phase === 2){
-      // spiral and aimed
-      if(Math.floor(boss.time * 20) % 6 === 0){
-        spiral(boss.x, boss.y, boss.time*8, 8, 180);
-      }
-      if(Math.random() < dt * 1.2){ // occasional aimed shots
-        aimed(boss.x, boss.y, player.x, player.y, 220);
-      }
-    } else {
-      // intense: homing bullets and large radial
-      if(Math.floor(boss.time * 8) % 8 === 0){ radial(boss.x, boss.y, 20, 160); }
-      if(Math.random() < dt * 2.0){ homing(boss.x, boss.y, player, 140); }
-    }
-
-    // if boss dies
-    if(boss.hp <= 0 && boss.alive){ boss.alive=false; setTimeout(()=>{/* nothing */},500); }
-  }
-
-  function radial(x,y,count,speed){
-    for(let i=0;i<count;i++){
-      const a = (i / count) * Math.PI*2 + Math.random()*0.12;
-      spawnBullet(x, y, Math.cos(a)*speed, Math.sin(a)*speed, 6, 'boss', 8);
-    }
-  }
-  function spiral(x,y,phase,step,speed){
-    for(let i=0;i<step;i++){
-      const a = phase + i * (Math.PI*2 / step);
-      spawnBullet(x,y,Math.cos(a)*speed,Math.sin(a)*speed,5,'boss',7);
-    }
-  }
-  function aimed(x,y,tx,ty,speed){
-    const ang = Math.atan2(ty-y, tx-x);
-    spawnBullet(x,y,Math.cos(ang)*speed,Math.sin(ang)*speed,7,'boss',6);
-  }
-  function homing(x,y,target,speed){
-    // spawn a slower bullet that steers
-    spawnBullet(x,y, (target.x - x)/100 * speed, (target.y - y)/100 * speed, 8, 'boss', 9);
-  }
-
-  // collision helper
-  function dist(a,b){ return Math.hypot(a.x-b.x, a.y-b.y); }
-
-  // Game update
-  function update(dt){
-    // Player movement
-    let moveX = 0;
-    if(keys['a']) moveX -= 1;
-    if(keys['d']) moveX += 1;
-    player.vx = lerp(player.vx, moveX * player.speed, 0.16);
-
-    // Jump
-    if((keys['w'] || keys[' ']) && player.onGround){ player.vy = -520; // higher jump (modified) player.onGround=false; }
-
-    // Apply gravity
-    player.vy += 1200 * dt;
-
-    // Integrate position
-    player.x += player.vx * dt;
-    player.y += player.vy * dt;
-
-    // ground collision
-    const groundY = H - 60;
-    if(player.y + player.h/2 > groundY){ player.y = groundY - player.h/2; player.vy = 0; player.onGround = true; }
-
-    // keep inside
-    player.x = clamp(player.x, 30, W-30);
-
-    // update facing based on mouse
-    player.facing = (mouse.x >= player.x) ? 1 : -1;
-
-    // Sword handling
-    if(mouse.down){
-      // begin sweep
-      if(!sword.sweeping) { sword.sweeping = true; sword.timer = 0; }
-      sword.timer += dt;
-    } else {
-      sword.sweeping = false; sword.timer = 0;
-    }
-
-    // boss
-    if(boss.alive) bossUpdate(dt);
-
-    // bullets movement
-    for(let i=bullets.length-1;i>=0;i--){
-      const b = bullets[i];
-      // simple homing for homing bullets by owner 'boss' with life>7
-      if(b.owner==='boss' && b.life>8){
-        const ang = Math.atan2(player.y - b.y, player.x - b.x);
-        const sp = Math.hypot(b.vx, b.vy);
-        // steer slightly
-        const desiredVx = Math.cos(ang)*sp;
-        const desiredVy = Math.sin(ang)*sp;
-        b.vx = lerp(b.vx, desiredVx, 0.06);
-        b.vy = lerp(b.vy, desiredVy, 0.06);
-      }
-      b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-      // remove offscreen or dead
-      if(b.life <= 0 || b.x < -50 || b.x > W+50 || b.y < -50 || b.y > H+50) bullets.splice(i,1);
-    }
-
-    // Bullet collisions with player
-    for(let i=bullets.length-1;i>=0;i--){
-      const b = bullets[i];
-      if(b.owner==='boss'){
-        const dx = player.x - b.x; const dy = player.y - b.y;
-        const rad = Math.hypot(dx,dy);
-        if(rad < (b.size + Math.max(player.w, player.h)/2 - 4)){
-          // take damage
-          player.hp -= 6;
-          bullets.splice(i,1);
-          // small knockback
-          player.vx += dx/rad * -120;
-        }
-      }
-    }
-
-    // Sword hit boss detection when sweeping
-    if(sword.sweeping && boss.alive){
-      // compute aim angle
-      const aimAng = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-      // swing progress loops to create repeated hits while held
-      const swingsPerSec = 1 / Math.max(0.08, sword.swingTime);
-      // compute current swing phase using timer
-      const phase = (sword.timer % sword.swingTime) / sword.swingTime; // 0..1
-      // map to angular offset to create a back-and-forth swing
-      const halfArc = sword.arc/2;
-      // we'll move angle from aim - halfArc/2 to aim + halfArc/2
-      const currentAngle = aimAng - halfArc/2 + halfArc * phase;
-      const dx = boss.x - player.x; const dy = boss.y - player.y; const d = Math.hypot(dx,dy);
-      if(d < sword.range + boss.r){
-        const angToBoss = Math.atan2(dy,dx);
-        let diff = Math.abs(((angToBoss - currentAngle) + Math.PI) % (Math.PI*2) - Math.PI);
-        if(diff < 0.55){
-          // hit boss
-          // to prevent continuous HP drain too fast, tie damage to cooldown timer
-          if(!sword._lastHitTime || performance.now() - sword._lastHitTime > sword.cooldown*1000){
-            sword._lastHitTime = performance.now();
-            boss.hp -= 12; // damage
-            // small knockback
-            boss.x += Math.cos(currentAngle) * 6;
-            // spawn particles
-            for(let i=0;i<6;i++){
-              const a = currentAngle + (Math.random()-0.5)*0.8;
-              spawnBullet(boss.x, boss.y, Math.cos(a)*(60+Math.random()*80), Math.sin(a)*(60+Math.random()*80), 3, 'player', 0.5);
-            }
-          }
-        }
-      }
-    }
-
-    // Boss contact with player
-    const dxBP = boss.x - player.x; const dyBP = boss.y - player.y; if(Math.hypot(dxBP,dyBP) < boss.r + 20){
-      // colliding
-      player.hp -= 0.8;
-    }
-
-    // clamp hp
-    player.hp = clamp(player.hp, 0, player.maxHp);
-    boss.hp = clamp(boss.hp, 0, boss.maxHp);
-  }
-
-  // Draw
-  function draw(){
-    ctx.clearRect(0,0,W,H);
-
-    // background stars
-    for(let i=0;i<40;i++){
-      const sx = (i*97) % W; const sy = ((i*47) + (performance.now()/60|0)) % H;
-      ctx.fillStyle = 'rgba(255,255,255,0.02)'; ctx.fillRect(sx,sy,1.2,1.2);
-    }
-
-    // ground
-    ctx.fillStyle = '#071a29'; ctx.fillRect(0,H-60,W,60);
-    // platforms (draw all)
-    ctx.fillStyle = '#0d2a3a';
-    for(const p of platforms){ ctx.fillRect(p.x, p.y, p.w, p.h); }
-
-    // draw boss
-    if(boss.alive){
-      // boss body
-      const g = ctx.createLinearGradient(boss.x - boss.r, boss.y - boss.r, boss.x + boss.r, boss.y + boss.r);
-      g.addColorStop(0,'#6b2d2d'); g.addColorStop(1,'#ff8b5e');
-      ctx.fillStyle = g;
-      ctx.beginPath(); ctx.ellipse(boss.x,boss.y,boss.r,boss.r*0.85,0,0,Math.PI*2); ctx.fill();
-      // boss eyes / features
-      ctx.fillStyle = '#2b0d0d'; ctx.beginPath(); ctx.ellipse(boss.x-18,boss.y-6,10,8,0,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.ellipse(boss.x+18,boss.y-6,10,8,0,0,Math.PI*2); ctx.fill();
-      // boss name label
-      ctx.fillStyle = 'rgba(255,255,255,0.9)'; ctx.font = '16px system-ui'; ctx.textAlign='center'; ctx.fillText('Israel Coffee', boss.x, boss.y - boss.r - 18);
-    } else {
-      // explosion
-      ctx.fillStyle = 'rgba(255,220,80,0.14)'; ctx.beginPath(); ctx.ellipse(boss.x,boss.y, boss.r*1.6, boss.r*1.2,0,0,Math.PI*2); ctx.fill();
-      ctx.fillStyle = 'white'; ctx.font='30px system-ui'; ctx.textAlign='center'; ctx.fillText('DEFEATED', boss.x, boss.y);
-    }
-
-    // draw bullets
-    for(const b of bullets){
-      if(b.owner === 'boss'){
-        ctx.fillStyle = 'rgba(255,90,90,0.98)';
-        ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
-      } else {
-        ctx.fillStyle = 'rgba(180,220,255,0.98)'; ctx.beginPath(); ctx.arc(b.x,b.y,b.size,0,Math.PI*2); ctx.fill();
-      }
-    }
-
-    // draw player
-    ctx.save();
-    ctx.translate(player.x, player.y);
-    // body
-    ctx.fillStyle = '#a8d3ff'; ctx.beginPath(); ctx.rect(-player.w/2, -player.h/2, player.w, player.h); ctx.fill();
-    // head
-    ctx.fillStyle = '#f7f7f7'; ctx.beginPath(); ctx.arc(10, -player.h/2 + 8, 8, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-
-    // draw sword arc when sweeping
-    if(sword.sweeping){
-      const aimAng = Math.atan2(mouse.y - player.y, mouse.x - player.x);
-      const halfArc = sword.arc/2;
-      const phase = (sword.timer % sword.swingTime) / sword.swingTime;
-      const currentAngle = aimAng - halfArc/2 + halfArc * phase;
-      // visual arc
-      ctx.save(); ctx.translate(player.x, player.y);
-      ctx.strokeStyle = 'rgba(255,240,200,0.12)'; ctx.lineWidth = 36; ctx.beginPath(); ctx.arc(0,0, sword.range, currentAngle - 0.45, currentAngle + 0.45); ctx.stroke();
-      ctx.strokeStyle = 'rgba(255,220,120,0.4)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(0,0, sword.range, currentAngle - 0.45, currentAngle + 0.45); ctx.stroke();
-      // sword tip
-      const tipX = Math.cos(currentAngle) * sword.range; const tipY = Math.sin(currentAngle) * sword.range;
-      ctx.fillStyle = 'rgba(255,240,180,0.95)'; ctx.beginPath(); ctx.arc(tipX, tipY, 8, 0, Math.PI*2); ctx.fill();
-      ctx.restore();
-    } else {
-      // show small aim reticle
-      ctx.beginPath(); ctx.fillStyle='rgba(255,255,255,0.06)'; ctx.arc(mouse.x, mouse.y, 8, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.strokeStyle='rgba(255,255,255,0.12)'; ctx.arc(mouse.x, mouse.y, 18, 0, Math.PI*2); ctx.stroke();
-    }
-
-    // HUD updates
-    document.getElementById('playerHP').style.width = (player.hp / player.maxHp * 100) + '%';
-    document.getElementById('bossHP').style.width = (boss.hp / boss.maxHp * 100) + '%';
-
-    // player HP text
-    ctx.fillStyle='rgba(255,255,255,0.9)'; ctx.font='14px system-ui'; ctx.textAlign='left'; ctx.fillText('HP: ' + Math.round(player.hp), 12, 20);
-
-    // show boss status
-    if(!boss.alive){ ctx.fillStyle='rgba(180,255,200,0.9)'; ctx.font='18px system-ui'; ctx.textAlign='center'; ctx.fillText('You defeated Israel Coffee! Nice!', W/2, 50); }
-
-    // Game over handling (show once and reload)
-    if(player.hp <= 0){
-      if(!window._playerDead){
-        window._playerDead = true;
-        ctx.fillStyle='rgba(255,120,120,0.95)'; ctx.font='36px system-ui'; ctx.textAlign='center'; ctx.fillText('YOU DIED', W/2, H/2);
-        setTimeout(()=>{ location.reload(); }, 900);
-      } else {
-        ctx.fillStyle='rgba(255,120,120,0.95)'; ctx.font='36px system-ui'; ctx.textAlign='center'; ctx.fillText('YOU DIED', W/2, H/2);
-      }
-    }
-  }
-
-  // main loop
-  function loop(now){
-    const dt = Math.min(1/30, (now - lastTime)/1000);
-    lastTime = now;
-    update(dt);
-    draw();
-    requestAnimationFrame(loop);
-  }
-
-  requestAnimationFrame(loop);
-
-})();
-
-// --- Integrated enhancements: Phase 2, minions, laser attack ---
-
-// Boss: Phase 2, minions and laser integrated into bossUpdate and main update loop
-function startLaser(){
-  boss.laserActive = true;
-  boss.laserTimer = 0;
-  laser.ang = Math.atan2(player.y - boss.y, player.x - boss.x);
 }
 
-function stopLaser(){ boss.laserActive = false; boss._sinceLastLaser = 0; }
-
-// summon a melee minion at boss position
-function summonMinion(){
-  enemies.push({ x: boss.x + (Math.random()-0.5)*30, y: boss.y + boss.r + 6, vx:0, vy:0, speed:90, w:36, h:36, hp:30, melee:true, sprite:'gubby.png' });
+function spawnMinion(){
+  minions.push({ x: boss.x, y: boss.y+50, vx: (Math.random()<0.5?-2:2), vy:0, size:40 });
 }
 
-// integrate into bossUpdate: extend existing function by wrapping
-const _origBossUpdate = bossUpdate;
-bossUpdate = function(dt){
-  _origBossUpdate(dt);
-
-  // phase 2 trigger
-  if(!boss.phase2 && boss.hp / boss.maxHp <= 0.5){ boss.phase2 = true; boss.vx *= 1.2; }
-
-  // laser cooldown timer (seconds)
-  boss._sinceLastLaser += dt;
-
-  // in phase 2, summon minions occasionally
-  if(boss.phase2){
-    if(performance.now() - boss.lastSummon > boss.summonCooldown){
-      summonMinion(); summonMinion(); boss.lastSummon = performance.now();
-    }
-    // try to start laser occasionally
-    if(!boss.laserActive && boss._sinceLastLaser >= boss.laserCooldown && Math.random() < 0.6){
-      startLaser();
-    }
-  } else {
-    // in phase 1 small chance to laser too
-    if(!boss.laserActive && boss._sinceLastLaser >= boss.laserCooldown * 1.8 && Math.random() < 0.08){ startLaser(); }
+function bossUpdate(){
+  if(boss.hp <= 150 && boss.phase === 1){
+    boss.phase = 2;
+    boss.red = true;
   }
 
-  // update laser timer
-  if(boss.laserActive){
-    boss.laserTimer += dt;
-    // windup period where laser doesn't damage yet
-    if(boss.laserTimer > boss.laserWindup){
-      // laser is damaging now
-      // compute damage to player if in beam
-      const ang = laser.ang;
-      // project player's position into laser space
-      const dx = player.x - boss.x, dy = player.y - boss.y;
-      const along = dx * Math.cos(ang) + dy * Math.sin(ang);
-      const perp = Math.abs(-dx * Math.sin(ang) + dy * Math.cos(ang));
-      if(along > 0 && perp < 18 * laser.scale){ player.hp -= 10 * dt; }
-    }
-    if(boss.laserTimer > boss.laserDuration + boss.laserWindup){
-      stopLaser();
+  boss.attackTimer++;
+
+  if(boss.phase === 1){
+    if(boss.attackTimer % 60 === 0) shootAtPlayer(4);
+    if(boss.attackTimer % 120 === 0){ boss.laserTimer = 90; }
+  }
+
+  else if(boss.phase === 2){
+    if(boss.attackTimer % 40 === 0) shootAtPlayer(6);
+    if(boss.attackTimer % 150 === 0) spawnMinion();
+    if(boss.attackTimer % 200 === 0) spawnMinion();
+    if(boss.attackTimer % 120 === 0){ boss.laserTimer = 120; }
+  }
+
+  if(boss.laserTimer > 0){ boss.laserTimer--; }
+}
+
+function drawLaser(){
+  if(boss.laserTimer > 0){
+    ctx.fillStyle = "red";
+    ctx.fillRect(boss.x+boss.width/2, boss.y+boss.height/2 - 5, 900, 10);
+    if(player.x > boss.x && player.y > boss.y && player.y < boss.y+boss.height){ die(); }
+  }
+}
+
+// --- Physics ---
+function updatePlayer(){
+  player.vx = 0;
+  if(keys["a"]) player.vx = -player.speed;
+  if(keys["d"]) player.vx = player.speed;
+  if(keys["w"] && player.onGround){ player.vy = -player.jumpPower; player.onGround=false; }
+
+  player.vy += 0.6;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  player.onGround = false;
+  for(const p of platforms){
+    if(player.x < p.x+p.width && player.x+player.width > p.x &&
+       player.y+player.height < p.y+20 && player.y+player.height > p.y){
+      player.y = p.y - player.height;
+      player.vy = 0;
+      player.onGround = true;
     }
   }
-};
+}
 
-// handle enemies AI, collisions and drawing in main update/draw
-const _origUpdate = update;
-update = function(dt){
-  _origUpdate(dt);
-  // update enemies
-  for(let i=enemies.length-1;i>=0;i--){
-    const e = enemies[i];
-    // simple gravity
-    e.vy += 1200 * dt;
-    e.x += e.vx * dt; e.y += e.vy * dt;
-    // platform collisions for enemies
-    const groundY = H - 60;
-    if(e.y + e.h/2 > groundY){ e.y = groundY - e.h/2; e.vy = 0; }
+// --- Update bullets/minions ---
+function updateEnemies(){
+  for(const b of bullets){ b.x += b.vx; b.y += b.vy; }
+  bullets = bullets.filter(b => b.x>-50 && b.x<950 && b.y>-50 && b.y<650);
+
+  for(const m of minions){
+    m.x += m.vx;
+    m.vy += 0.4;
+    m.y += m.vy;
+
     for(const p of platforms){
-      if(e.x > p.x-20 && e.x < p.x+p.w+20){
-        if(e.y + e.h/2 > p.y && e.y + e.h/2 < p.y + 20 && e.vy > 0){ e.y = p.y - e.h/2; e.vy = 0; }
+      if(m.x < p.x+p.width && m.x+m.size > p.x && m.y+m.size < p.y+20 && m.y+m.size > p.y){
+        m.y = p.y - m.size;
+        m.vy = 0;
       }
     }
-    // move towards player (melee)
-    const dx = player.x - e.x; const dy = player.y - e.y; const d = Math.hypot(dx,dy);
-    if(d > 6){ e.vx = (dx / d) * e.speed; } else e.vx = 0;
-    // attack if close
-    if(d < 36){ player.hp -= 12 * dt; }
-    // remove dead
-    if(e.hp <= 0){ enemies.splice(i,1); }
+
+    if(Math.abs(m.x - player.x) < 40 && Math.abs(m.y - player.y) < 40) die();
   }
+}
+
+// --- Collision for sword ---
+function swordHit(){
+  if(player.attacking){
+    const reach = { x: player.x+player.width, y: player.y, w:40, h:40 };
+    if(reach.x < boss.x+boss.width && reach.x+reach.w > boss.x && reach.y < boss.y+boss.height && reach.y+reach.h > boss.y){
+      boss.hp -= 2;
+    }
+  }
+}
+
+// --- Death ---
+function die(){ location.reload(); }
+
+// --- Draw ---
+function draw(){
+  ctx.clearRect(0,0,900,600);
+
+  ctx.drawImage(playerImg, player.x, player.y, player.width, player.height);
+
+  ctx.save();
+  if(boss.red) ctx.filter="hue-rotate(180deg)";
+  ctx.drawImage(bossImg, boss.x, boss.y, boss.width, boss.height);
+  ctx.restore();
+
+  for(const p of platforms){
+    ctx.fillStyle="#555";
+    ctx.fillRect(p.x,p.y,p.width,p.height);
+  }
+
+  for(const b of bullets){
+    ctx.fillStyle="yellow";
+    ctx.beginPath(); ctx.arc(b.x,b.y,b.r,0,Math.PI*2); ctx.fill();
+  }
+
+  for(const m of minions){ ctx.drawImage(gubbyImg,m.x,m.y,m.size,m.size); }
+
+  drawLaser();
+
+  ctx.fillStyle="white";
+  ctx.fillText("HP: "+boss.hp,20,30);
+}
+
+function gameLoop(){
+  updatePlayer();
+  updateEnemies();
+  bossUpdate();
+  swordHit();
+  draw();
+  requestAnimationFrame(gameLoop);
+}
+
+// --- Start Button ---
+document.getElementById("startBtn").onclick = () => {
+  document.getElementById("mainMenu").style.display = "none";
+  canvas.focus();
+  gameLoop();
 };
-
-// draw enemies and laser in draw
-const _origDraw = draw;
-draw = function(){
-  _origDraw();
-
-  // draw enemies (minions)
-  for(const e of enemies){
-    if(gubbyImg && gubbyImg.complete){ ctx.drawImage(gubbyImg, e.x - e.w/2, e.y - e.h/2, e.w, e.h); }
-    else { ctx.fillStyle='rgba(200,180,120,0.95)'; ctx.fillRect(e.x - e.w/2, e.y - e.h/2, e.w, e.h); }
-  }
-
-  // draw laser if active
-  if(boss.laserActive){
-    const ang = laser.ang;
-    ctx.save(); ctx.translate(boss.x, boss.y); ctx.rotate(ang);
-    // windup visual
-    const t = boss.laserTimer; const wind = Math.min(1, t / boss.laserWindup);
-    ctx.fillStyle = 'rgba(255,60,60,' + (0.18 + 0.5*wind) + ')'; ctx.fillRect(0, -10*laser.scale, W, 20*laser.scale);
-    ctx.restore();
-  }
-
-};
-
-// --- End integrated enhancements ---
-
-  // --- Start button logic ---
-  const startBtn = document.getElementById('startBtn');
-  const mainMenu = document.getElementById('mainMenu');
-  if(startBtn){
-    startBtn.addEventListener('click', () => {
-      mainMenu.style.display = 'none';
-      if(typeof loop === 'function') loop();
-    });
-  }
 </script>
 </body>
 </html>
