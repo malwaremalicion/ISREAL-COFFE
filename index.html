@@ -39,7 +39,7 @@ const player = {
   x:100, y:300, width:40, height:50,
   vx:0, vy:0,
   speed:4,
-  jumpPower:12,
+  jumpPower:15,
   onGround:false,
   attacking:false
 };
@@ -128,7 +128,7 @@ function updatePlayer(){
   if(keys["d"]) player.vx = player.speed;
   if(keys["w"] && player.onGround){ player.vy = -player.jumpPower; player.onGround=false; }
 
-  player.vy += 0.6;
+  player.vy += 0.9;
   player.x += player.vx;
   player.y += player.vy;
 
