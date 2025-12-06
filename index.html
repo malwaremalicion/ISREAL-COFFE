@@ -20,6 +20,11 @@
 </style>
 </head>
 <body>
+<div id="mainMenu" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;background:linear-gradient(180deg,#071020cc,#071930cc);z-index:50;color:var(--fg);">
+  <div style="font-size:28px;text-align:center;padding:8px 16px;">I AM IS REAL COFFEE PT BOME GAH ZAH</div>
+  <button id="startBtn" style="margin-top:18px;padding:10px 20px;font-size:18px;border-radius:8px;">Start</button>
+</div>
+
 <div id="gameWrap">
   <div class="ui">
     <div class="hud">
@@ -49,6 +54,11 @@
 <script>
 (() => {
   const canvas = document.getElementById('c');
+  // Sprites (place image files next to the HTML)
+  const bossImg = new Image(); bossImg.src = 'boss.png';
+  const playerImg = new Image(); playerImg.src = 'player.png';
+  // gubbyImg already defined below; ensure it's loaded earlier too
+  gubbyImg.src = gubbyImg.src || 'gubby.png';
   const ctx = canvas.getContext('2d');
   const W = canvas.width; const H = canvas.height;
 
@@ -397,8 +407,16 @@
     // show boss status
     if(!boss.alive){ ctx.fillStyle='rgba(180,255,200,0.9)'; ctx.font='18px system-ui'; ctx.textAlign='center'; ctx.fillText('You defeated Israel Coffee! Nice!', W/2, 50); }
 
-    // Game over
-    if(player.hp <= 0){ ctx.fillStyle='rgba(255,120,120,0.95)'; ctx.font='36px system-ui'; ctx.textAlign='center'; ctx.fillText('YOU DIED', W/2, H/2); }
+    // Game over handling (show once and reload)
+    if(player.hp <= 0){
+      if(!window._playerDead){
+        window._playerDead = true;
+        ctx.fillStyle='rgba(255,120,120,0.95)'; ctx.font='36px system-ui'; ctx.textAlign='center'; ctx.fillText('YOU DIED', W/2, H/2);
+        setTimeout(()=>{ location.reload(); }, 900);
+      } else {
+        ctx.fillStyle='rgba(255,120,120,0.95)'; ctx.font='36px system-ui'; ctx.textAlign='center'; ctx.fillText('YOU DIED', W/2, H/2);
+      }
+    }
   }
 
   // main loop
@@ -531,3 +549,5 @@ draw = function(){
 </script>
 </body>
 </html>
+
+
