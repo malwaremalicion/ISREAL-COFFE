@@ -73,6 +73,30 @@
 
   // Bullets
   let bullets = [];
+  // Platforms for reaching the boss
+  const platforms = [
+    {x:80, y:H-180, w:220, h:12},
+    {x:W-320, y:H-260, w:200, h:12},
+    {x:W/2-150, y:H-330, w:300, h:12},
+    {x:50, y:H-400, w:220, h:12},
+    {x:W-270, y:H-430, w:240, h:12}
+  ];
+
+  // Minions array
+  let enemies = [];
+  const gubbyImg = new Image(); gubbyImg.src = 'gubby.png';
+
+  // Boss laser state
+  boss.phase2 = boss.phase2 || false;
+  boss.summonCooldown = boss.summonCooldown || 2500;
+  boss.lastSummon = boss.lastSummon || 0;
+  boss.laserActive = boss.laserActive || false;
+  boss.laserTimer = boss.laserTimer || 0;
+  boss.laserDuration = boss.laserDuration || 1.2;
+  boss.laserWindup = boss.laserWindup || 0.5;
+  boss.laserCooldown = boss.laserCooldown || 4.0; // seconds between lasers
+  boss._sinceLastLaser = boss._sinceLastLaser || 0;
+  let laser = {ang:0,scale:1};
 
   // Sword swing
   const sword = {
@@ -180,7 +204,7 @@
     player.vx = lerp(player.vx, moveX * player.speed, 0.16);
 
     // Jump
-    if((keys['w'] || keys[' ']) && player.onGround){ player.vy = -420; player.onGround=false; }
+    if((keys['w'] || keys[' ']) && player.onGround){ player.vy = -520; // higher jump (modified) player.onGround=false; }
 
     // Apply gravity
     player.vy += 1200 * dt;
@@ -302,9 +326,9 @@
 
     // ground
     ctx.fillStyle = '#071a29'; ctx.fillRect(0,H-60,W,60);
-    // decorative platforms
-    ctx.fillStyle = '#0d2a3a'; ctx.fillRect(80,H-180,220,12);
-    ctx.fillRect(W-320,H-260,200,12);
+    // platforms (draw all)
+    ctx.fillStyle = '#0d2a3a';
+    for(const p of platforms){ ctx.fillRect(p.x, p.y, p.w, p.h); }
 
     // draw boss
     if(boss.alive){
@@ -390,70 +414,119 @@
 
 })();
 
-// --- Added enhancements: Phase 2, minions, attacks, jump boost ---
+// --- Integrated enhancements: Phase 2, minions, laser attack ---
 
-// Increase jump height
-if (typeof JUMP_FORCE !== 'undefined') {
-  JUMP_FORCE = 18;
+// Boss: Phase 2, minions and laser integrated into bossUpdate and main update loop
+function startLaser(){
+  boss.laserActive = true;
+  boss.laserTimer = 0;
+  laser.ang = Math.atan2(player.y - boss.y, player.x - boss.x);
 }
 
-// Ensure boss object has phase flags
-if (typeof boss !== 'undefined') {
-  boss.phase2 = boss.phase2 || false;
-  boss.summonCooldown = boss.summonCooldown || 2000;
-  boss.lastSummon = boss.lastSummon || 0;
+function stopLaser(){ boss.laserActive = false; boss._sinceLastLaser = 0; }
+
+// summon a melee minion at boss position
+function summonMinion(){
+  enemies.push({ x: boss.x + (Math.random()-0.5)*30, y: boss.y + boss.r + 6, vx:0, vy:0, speed:90, w:36, h:36, hp:30, melee:true, sprite:'gubby.png' });
 }
 
-// Minion summoning function
-function summonMinion() {
-  enemies.push({
-    x: boss.x,
-    y: boss.y,
-    vx: 0,
-    vy: 0,
-    speed: 2.2,
-    width: 40,
-    height: 40,
-    melee: true,
-    sprite: 'gubby.png'
-  });
-}
+// integrate into bossUpdate: extend existing function by wrapping
+const _origBossUpdate = bossUpdate;
+bossUpdate = function(dt){
+  _origBossUpdate(dt);
 
-// Boss update wrapper
-const _oldBossUpdate = updateBoss;
-updateBoss = function() {
-  _oldBossUpdate();
+  // phase 2 trigger
+  if(!boss.phase2 && boss.hp / boss.maxHp <= 0.5){ boss.phase2 = true; boss.vx *= 1.2; }
 
-  // Trigger Phase 2
-  if (!boss.phase2 && boss.health < boss.maxHealth * 0.5) {
-    boss.phase2 = true;
-    boss.color = 'red';
-    boss.attackCooldown *= 0.6;
+  // laser cooldown timer (seconds)
+  boss._sinceLastLaser += dt;
+
+  // in phase 2, summon minions occasionally
+  if(boss.phase2){
+    if(performance.now() - boss.lastSummon > boss.summonCooldown){
+      summonMinion(); summonMinion(); boss.lastSummon = performance.now();
+    }
+    // try to start laser occasionally
+    if(!boss.laserActive && boss._sinceLastLaser >= boss.laserCooldown && Math.random() < 0.6){
+      startLaser();
+    }
+  } else {
+    // in phase 1 small chance to laser too
+    if(!boss.laserActive && boss._sinceLastLaser >= boss.laserCooldown * 1.8 && Math.random() < 0.08){ startLaser(); }
   }
 
-  // Phase 2 minion spawning
-  if (boss.phase2) {
-    const now = performance.now();
-    if (now - boss.lastSummon > boss.summonCooldown) {
-      summonMinion();
-      summonMinion();
-      boss.lastSummon = now;
+  // update laser timer
+  if(boss.laserActive){
+    boss.laserTimer += dt;
+    // windup period where laser doesn't damage yet
+    if(boss.laserTimer > boss.laserWindup){
+      // laser is damaging now
+      // compute damage to player if in beam
+      const ang = laser.ang;
+      // project player's position into laser space
+      const dx = player.x - boss.x, dy = player.y - boss.y;
+      const along = dx * Math.cos(ang) + dy * Math.sin(ang);
+      const perp = Math.abs(-dx * Math.sin(ang) + dy * Math.cos(ang));
+      if(along > 0 && perp < 18 * laser.scale){ player.hp -= 10 * dt; }
+    }
+    if(boss.laserTimer > boss.laserDuration + boss.laserWindup){
+      stopLaser();
     }
   }
 };
 
-// Add extra rapid-fire projectiles in phase 2
-const _oldBossAttack = spawnBossAttack;
-spawnBossAttack = function() {
-  _oldBossAttack();
-
-  if (boss.phase2) {
-    setTimeout(_oldBossAttack, 200);
-    setTimeout(_oldBossAttack, 400);
+// handle enemies AI, collisions and drawing in main update/draw
+const _origUpdate = update;
+update = function(dt){
+  _origUpdate(dt);
+  // update enemies
+  for(let i=enemies.length-1;i>=0;i--){
+    const e = enemies[i];
+    // simple gravity
+    e.vy += 1200 * dt;
+    e.x += e.vx * dt; e.y += e.vy * dt;
+    // platform collisions for enemies
+    const groundY = H - 60;
+    if(e.y + e.h/2 > groundY){ e.y = groundY - e.h/2; e.vy = 0; }
+    for(const p of platforms){
+      if(e.x > p.x-20 && e.x < p.x+p.w+20){
+        if(e.y + e.h/2 > p.y && e.y + e.h/2 < p.y + 20 && e.vy > 0){ e.y = p.y - e.h/2; e.vy = 0; }
+      }
+    }
+    // move towards player (melee)
+    const dx = player.x - e.x; const dy = player.y - e.y; const d = Math.hypot(dx,dy);
+    if(d > 6){ e.vx = (dx / d) * e.speed; } else e.vx = 0;
+    // attack if close
+    if(d < 36){ player.hp -= 12 * dt; }
+    // remove dead
+    if(e.hp <= 0){ enemies.splice(i,1); }
   }
 };
 
-// --- End enhancements ---
+// draw enemies and laser in draw
+const _origDraw = draw;
+draw = function(){
+  _origDraw();
+
+  // draw enemies (minions)
+  for(const e of enemies){
+    if(gubbyImg && gubbyImg.complete){ ctx.drawImage(gubbyImg, e.x - e.w/2, e.y - e.h/2, e.w, e.h); }
+    else { ctx.fillStyle='rgba(200,180,120,0.95)'; ctx.fillRect(e.x - e.w/2, e.y - e.h/2, e.w, e.h); }
+  }
+
+  // draw laser if active
+  if(boss.laserActive){
+    const ang = laser.ang;
+    ctx.save(); ctx.translate(boss.x, boss.y); ctx.rotate(ang);
+    // windup visual
+    const t = boss.laserTimer; const wind = Math.min(1, t / boss.laserWindup);
+    ctx.fillStyle = 'rgba(255,60,60,' + (0.18 + 0.5*wind) + ')'; ctx.fillRect(0, -10*laser.scale, W, 20*laser.scale);
+    ctx.restore();
+  }
+
+};
+
+// --- End integrated enhancements ---
 
 </script>
 </body>
